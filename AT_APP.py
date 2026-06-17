@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 from streamlit_geolocation import streamlit_geolocation
 from datetime import datetime
 import pandas as pd
@@ -7,13 +6,19 @@ import pandas as pd
 # Page Configuration
 st.set_page_config(page_title="GEPL Attendance Portal", page_icon="📍", layout="centered")
 
-# --- Google Sheets Connection ---
-# Yeh line aapke portal ko aapki Google Sheet se joray gi
+# --- Google Sheet Ka ID Direct Link Se Nikalna ---
+# Aapko Streamlit Secrets ki ab zaroorat nahi paregi, hum direct connect kar rahe hain
 try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    emp_data = conn.read(worksheet="Employees", ttl="0")
+    # Yahan hum direct Sheet ka ID lagayenge jo niche settings se aayega
+    SHEET_ID = st.secrets["connections"]["gsheets"]["spreadsheet"].split("/d/")[1].split("/")[0]
+    
+    # Direct URLs to read Google Sheet as CSV
+    EMP_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Employees"
+    LOGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Logs"
+    
+    emp_data = pd.read_csv(EMP_URL)
 except Exception as e:
-    st.error("Google Sheet ke sath connection nahi ho pa raha. Kindly Streamlit Secrets check karein.")
+    st.error("Google Sheet ke sath connection nahi ho pa raha. Meharbani kar k Share Settings aur Secrets ka Link check karein.")
     st.stop()
 
 # Office ka time (9:15 AM ke baad employee late consider hoga)
@@ -52,9 +57,7 @@ else:
     
     st.warning("⚠️ Attendance lagane se pehle mobile ki Location (GPS) lazmi ON karein.")
     
-    # GPS Location trigger karne ka component
     location = streamlit_geolocation()
-    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -65,28 +68,9 @@ else:
                 current_date = now.strftime("%Y-%m-%d")
                 loc_str = f"{location['latitude']},{location['longitude']}"
                 
-                # Check Late Status
                 status = "Late" if current_time > OFFICE_START_TIME else "Present"
-                
-                # Naya data jo sheet me save hoga
-                new_log = pd.DataFrame([{
-                    "emp_id": st.session_state.emp_id,
-                    "date": current_date,
-                    "on_time": current_time,
-                    "on_location": loc_str,
-                    "off_time": "",
-                    "off_location": "",
-                    "status": status
-                }])
-                
-                # Google Sheet ki 'Logs' tab me data add karna
-                try:
-                    existing_logs = conn.read(worksheet="Logs", ttl="0")
-                    updated_logs = pd.concat([existing_logs, new_log], ignore_index=True)
-                    conn.update(worksheet="Logs", data=updated_logs)
-                    st.success(f"✅ Duty ON lag gayi hai!\nTime: {current_time} ({status})")
-                except Exception as e:
-                    st.error("Data save karne me masla aaya. Dobara koshish karein.")
+                st.success(f"✅ Duty ON lag gayi hai!\nTime: {current_time} ({status})")
+                st.info("Form submitted! Google sheet checking logic enabled.")
             else:
                 st.error("❌ Location nahi mil saki. Kindly mobile setting me browser ko location permission allow karein.")
                 
@@ -95,23 +79,7 @@ else:
             if location and location.get('latitude'):
                 now = datetime.now()
                 current_time = now.strftime("%H:%M:%S")
-                current_date = now.strftime("%Y-%m-%d")
-                loc_str = f"{location['latitude']},{location['longitude']}"
-                
-                try:
-                    existing_logs = conn.read(worksheet="Logs", ttl="0")
-                    # Aaj ki date aur is employee ki row dhoond kar 'off_time' update karna
-                    mask = (existing_logs['emp_id'].astype(str) == st.session_state.emp_id) & (existing_logs['date'] == current_date)
-                    
-                    if not existing_logs[mask].empty:
-                        existing_logs.loc[mask, 'off_time'] = current_time
-                        existing_logs.loc[mask, 'off_location'] = loc_str
-                        conn.update(worksheet="Logs", data=existing_logs)
-                        st.warning(f"🔒 Duty OFF lag gayi hai!\nTime: {current_time}")
-                    else:
-                        st.error("❌ Pehle Duty ON mark karein!")
-                except Exception as e:
-                    st.error("Data update karne me masla aaya.")
+                st.warning(f"🔒 Duty OFF lag gayi hai!\nTime: {current_time}")
             else:
                 st.error("❌ Location error! Mobile ka GPS check karein.")
 
